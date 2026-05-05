@@ -5,7 +5,9 @@ from PyQt6.QtCore import Qt, QRect, QPoint, QSettings, QTimer
 from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt6.QtWidgets import QApplication, QMenu, QWidget
 
-_MARGIN = 8
+_MARGIN   = 8
+_FADE_MS  = 250   # ms for each half of the transition (out then in)
+_FADE_FPS = 60
 
 
 class _Edge(IntFlag):
@@ -50,9 +52,19 @@ class TimeDisplay(QWidget):
 
         QApplication.instance().screenAdded.connect(self._on_screen_added)
 
+        now = datetime.now()
+        self._displayed_time, self._displayed_day, self._displayed_date = self._make_strings(now)
+        self._pending_strings: tuple[str, str, str] | None = None
+        self._fade_alpha: float = 1.0
+        self._fade_dir: int = 0   # -1 = fading out, 0 = stable, +1 = fading in
+
         self._clock_timer = QTimer(self)
-        self._clock_timer.timeout.connect(self.update)
-        self._clock_timer.start(250)   # repaint 4x/s so seconds are never > 250 ms stale
+        self._clock_timer.timeout.connect(self._tick)
+        self._clock_timer.start(250)
+
+        self._fade_timer = QTimer(self)
+        self._fade_timer.setInterval(1000 // _FADE_FPS)
+        self._fade_timer.timeout.connect(self._fade_step)
 
     # ------------------------------------------------------------------
     # Settings load
@@ -142,18 +154,39 @@ class TimeDisplay(QWidget):
         f.setBold(self.bold)
         return f
 
-    def paintEvent(self, event):
-        now = datetime.now()
-
+    def _make_strings(self, now: datetime) -> tuple[str, str, str]:
         if self.format_24h:
             time_str = now.strftime("%H:%M:%S") if self.show_seconds else now.strftime("%H:%M")
         else:
             fmt = "%I:%M:%S %p" if self.show_seconds else "%I:%M %p"
             time_str = now.strftime(fmt).lstrip("0")
+        return time_str, now.strftime("%A"), now.strftime("%B %-d, %Y")
 
-        day_str  = now.strftime("%A")
-        date_str = now.strftime("%B %-d, %Y")
+    def _tick(self):
+        new_strings = self._make_strings(datetime.now())
+        current = (self._displayed_time, self._displayed_day, self._displayed_date)
+        if new_strings == current:
+            return
+        self._pending_strings = new_strings
+        if self._fade_dir == 0:
+            self._fade_dir = -1
+            self._fade_timer.start()
 
+    def _fade_step(self):
+        step = 1.0 / (_FADE_MS / 1000 * _FADE_FPS)
+        self._fade_alpha += self._fade_dir * step
+        if self._fade_dir == -1 and self._fade_alpha <= 0:
+            self._fade_alpha = 0.0
+            self._displayed_time, self._displayed_day, self._displayed_date = self._pending_strings
+            self._pending_strings = None
+            self._fade_dir = 1
+        elif self._fade_dir == 1 and self._fade_alpha >= 1:
+            self._fade_alpha = 1.0
+            self._fade_dir = 0
+            self._fade_timer.stop()
+        self.update()
+
+    def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -174,11 +207,14 @@ class TimeDisplay(QWidget):
         y2 = start_y + time_h + gap
         y3 = y2 + date_h + gap
 
+        painter.save()
+        painter.setOpacity(self._fade_alpha)
         painter.setFont(time_font)
-        self._draw_text(painter, QRect(0, start_y, self.width(), time_h), time_str, self.time_color)
+        self._draw_text(painter, QRect(0, start_y, self.width(), time_h), self._displayed_time, self.time_color)
         painter.setFont(date_font)
-        self._draw_text(painter, QRect(0, y2, self.width(), date_h), day_str,  self.day_color)
-        self._draw_text(painter, QRect(0, y3, self.width(), date_h), date_str, self.date_color)
+        self._draw_text(painter, QRect(0, y2, self.width(), date_h), self._displayed_day,  self.day_color)
+        self._draw_text(painter, QRect(0, y3, self.width(), date_h), self._displayed_date, self.date_color)
+        painter.restore()
 
         if self._is_interactive():
             self._draw_interactive_frame(painter)
@@ -344,6 +380,13 @@ class TimeDisplay(QWidget):
         self.setGeometry(x, y, w, h)
         self._save_geo_settings(x, y, w, h)
         self._apply_window_flags(reshow=True)
+
+        # Reset fade state so new format strings appear immediately
+        self._fade_timer.stop()
+        self._fade_alpha = 1.0
+        self._fade_dir = 0
+        self._pending_strings = None
+        self._displayed_time, self._displayed_day, self._displayed_date = self._make_strings(datetime.now())
         self.update()
 
     # ------------------------------------------------------------------

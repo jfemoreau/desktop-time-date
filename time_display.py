@@ -147,6 +147,14 @@ class TimeDisplay(QWidget):
         if rel_x is not None and rel_y is not None:
             sg = screen.geometry()
             self.move(sg.left() + int(rel_x), sg.top() + int(rel_y))
+        # Force the compositor to fully redraw the window after screen reconnect.
+        # Without this, stale pixels from before the KVM switch linger visually
+        # even though the window is at the correct position.
+        QTimer.singleShot(300, self._reshow_window)
+
+    def _reshow_window(self):
+        self.hide()
+        self.show()
 
     # ------------------------------------------------------------------
     # Painting

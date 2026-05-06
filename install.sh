@@ -34,7 +34,7 @@ mkdir -p "$APPS_DIR"
 cat > "$APPS_DIR/desktop-time-date.desktop" << EOF
 [Desktop Entry]
 Type=Application
-Name=Desktop Time & Date
+Name=Desktop Time and Date
 GenericName=Clock Widget
 Comment=Display a live clock, day of the week, and date as a desktop widget
 Exec=$APP_DIR/desktop-time-date

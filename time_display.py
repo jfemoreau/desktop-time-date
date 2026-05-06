@@ -153,8 +153,10 @@ class TimeDisplay(QWidget):
         QTimer.singleShot(300, self._reshow_window)
 
     def _reshow_window(self):
+        pos = self.pos()
         self.hide()
         self.show()
+        self.move(pos)
 
     # ------------------------------------------------------------------
     # Painting

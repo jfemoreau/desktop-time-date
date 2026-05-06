@@ -53,10 +53,14 @@ class TimeDisplay(QWidget):
         QApplication.instance().screenAdded.connect(self._on_screen_added)
 
         now = datetime.now()
-        self._displayed_time, self._displayed_day, self._displayed_date = self._make_strings(now)
-        self._pending_time: str | None = None
-        self._fade_alpha: float = 1.0
-        self._fade_dir: int = 0   # -1 = fading out, 0 = stable, +1 = fading in
+        self._disp_hours, self._disp_min, self._disp_sec, self._disp_ampm = self._split_time(now)
+        self._displayed_day, self._displayed_date = self._make_day_date(now)
+        self._pend_min: str | None = None
+        self._pend_sec: str | None = None
+        self._min_alpha: float = 1.0
+        self._sec_alpha: float = 1.0
+        self._min_dir: int = 0   # -1 fading out, 0 stable, +1 fading in
+        self._sec_dir: int = 0
 
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._tick)
@@ -154,41 +158,79 @@ class TimeDisplay(QWidget):
         f.setBold(self.bold)
         return f
 
-    def _make_strings(self, now: datetime) -> tuple[str, str, str]:
+    def _split_time(self, now: datetime) -> tuple[str, str, str, str]:
         if self.format_24h:
-            time_str = now.strftime("%H:%M:%S") if self.show_seconds else now.strftime("%H:%M")
+            return (
+                now.strftime("%H:"),
+                now.strftime("%M"),
+                (":" + now.strftime("%S")) if self.show_seconds else "",
+                "",
+            )
         else:
-            fmt = "%I:%M:%S %p" if self.show_seconds else "%I:%M %p"
-            time_str = now.strftime(fmt).lstrip("0")
-        return time_str, now.strftime("%A"), now.strftime("%B %-d, %Y")
+            h = now.hour % 12 or 12
+            return (
+                f"{h}:",
+                now.strftime("%M"),
+                (":" + now.strftime("%S")) if self.show_seconds else "",
+                " " + now.strftime("%p"),
+            )
+
+    def _make_day_date(self, now: datetime) -> tuple[str, str]:
+        return now.strftime("%A"), now.strftime("%B %-d, %Y")
 
     def _tick(self):
         now = datetime.now()
-        time_str, day_str, date_str = self._make_strings(now)
-        # Day and date update immediately — no animation needed
+        hours, minutes, seconds, ampm = self._split_time(now)
+        day_str, date_str = self._make_day_date(now)
+
         if day_str != self._displayed_day or date_str != self._displayed_date:
             self._displayed_day  = day_str
             self._displayed_date = date_str
             self.update()
-        # Time fades
-        if time_str == self._displayed_time:
-            return
-        self._pending_time = time_str
-        if self._fade_dir == 0:
-            self._fade_dir = -1
-            self._fade_timer.start()
+
+        if hours != self._disp_hours or ampm != self._disp_ampm:
+            self._disp_hours = hours
+            self._disp_ampm  = ampm
+            self.update()
+
+        if minutes != self._disp_min and self._pend_min is None:
+            self._pend_min = minutes
+            self._min_dir  = -1
+            if not self._fade_timer.isActive():
+                self._fade_timer.start()
+
+        if seconds != self._disp_sec and self._pend_sec is None:
+            self._pend_sec = seconds
+            self._sec_dir  = -1
+            if not self._fade_timer.isActive():
+                self._fade_timer.start()
 
     def _fade_step(self):
         step = 1.0 / (_FADE_MS / 1000 * _FADE_FPS)
-        self._fade_alpha += self._fade_dir * step
-        if self._fade_dir == -1 and self._fade_alpha <= 0:
-            self._fade_alpha = 0.0
-            self._displayed_time = self._pending_time
-            self._pending_time = None
-            self._fade_dir = 1
-        elif self._fade_dir == 1 and self._fade_alpha >= 1:
-            self._fade_alpha = 1.0
-            self._fade_dir = 0
+
+        if self._min_dir != 0:
+            self._min_alpha += self._min_dir * step
+            if self._min_dir == -1 and self._min_alpha <= 0:
+                self._min_alpha    = 0.0
+                self._disp_min     = self._pend_min
+                self._pend_min     = None
+                self._min_dir      = 1
+            elif self._min_dir == 1 and self._min_alpha >= 1:
+                self._min_alpha    = 1.0
+                self._min_dir      = 0
+
+        if self._sec_dir != 0:
+            self._sec_alpha += self._sec_dir * step
+            if self._sec_dir == -1 and self._sec_alpha <= 0:
+                self._sec_alpha    = 0.0
+                self._disp_sec     = self._pend_sec
+                self._pend_sec     = None
+                self._sec_dir      = 1
+            elif self._sec_dir == 1 and self._sec_alpha >= 1:
+                self._sec_alpha    = 1.0
+                self._sec_dir      = 0
+
+        if self._min_dir == 0 and self._sec_dir == 0:
             self._fade_timer.stop()
         self.update()
 
@@ -213,11 +255,8 @@ class TimeDisplay(QWidget):
         y2 = start_y + time_h + gap
         y3 = y2 + date_h + gap
 
-        painter.save()
-        painter.setOpacity(self._fade_alpha)
         painter.setFont(time_font)
-        self._draw_text(painter, QRect(0, start_y, self.width(), time_h), self._displayed_time, self.time_color)
-        painter.restore()
+        self._draw_time_segments(painter, start_y, time_h, time_font)
 
         painter.setFont(date_font)
         self._draw_text(painter, QRect(0, y2, self.width(), date_h), self._displayed_day,  self.day_color)
@@ -227,6 +266,31 @@ class TimeDisplay(QWidget):
             self._draw_interactive_frame(painter)
 
         painter.end()
+
+    def _draw_time_segments(self, painter: QPainter, start_y: int, time_h: int, font: QFont):
+        fm = QFontMetrics(font)
+        segments = [
+            (self._disp_hours, 1.0),
+            (self._disp_min,   self._min_alpha),
+            (self._disp_sec,   self._sec_alpha),
+            (self._disp_ampm,  1.0),
+        ]
+        total_w = sum(fm.horizontalAdvance(t) for t, _ in segments if t)
+        x = (self.width() - total_w) // 2
+        baseline = start_y + fm.ascent() + (time_h - fm.height()) // 2
+        for text, alpha in segments:
+            if not text:
+                continue
+            w = fm.horizontalAdvance(text)
+            painter.save()
+            painter.setOpacity(alpha)
+            if self.shadow_enabled:
+                painter.setPen(QColor(self.shadow_color))
+                painter.drawText(x + self.shadow_offset, baseline + self.shadow_offset, text)
+            painter.setPen(QColor(self.time_color))
+            painter.drawText(x, baseline, text)
+            painter.restore()
+            x += w
 
     def _draw_text(self, painter: QPainter, rect: QRect, text: str, color_str: str):
         if self.shadow_enabled:
@@ -390,10 +454,15 @@ class TimeDisplay(QWidget):
 
         # Reset fade state so new format strings appear immediately
         self._fade_timer.stop()
-        self._fade_alpha = 1.0
-        self._fade_dir = 0
-        self._pending_time = None
-        self._displayed_time, self._displayed_day, self._displayed_date = self._make_strings(datetime.now())
+        now = datetime.now()
+        self._disp_hours, self._disp_min, self._disp_sec, self._disp_ampm = self._split_time(now)
+        self._displayed_day, self._displayed_date = self._make_day_date(now)
+        self._pend_min  = None
+        self._pend_sec  = None
+        self._min_alpha = 1.0
+        self._sec_alpha = 1.0
+        self._min_dir   = 0
+        self._sec_dir   = 0
         self.update()
 
     # ------------------------------------------------------------------

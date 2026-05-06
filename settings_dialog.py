@@ -40,7 +40,7 @@ def _refresh_btn(btn: QPushButton, color_str: str):
 
 class SettingsDialog(QDialog):
     def __init__(self, parent):
-        super().__init__(parent, Qt.WindowType.Window)
+        super().__init__(parent, Qt.WindowType.Dialog)
         self.setWindowTitle("Desktop Time & Date — Settings")
         self.setMinimumWidth(460)
         self._colors: dict[str, str] = {}
@@ -214,9 +214,9 @@ class SettingsDialog(QDialog):
             _refresh_btn(btn, self._colors[key])
 
     def apply_stay_on_top(self, enabled: bool):
-        flags = Qt.WindowType.Window
+        flags = Qt.WindowType.Dialog
         if enabled:
-            flags |= Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
+            flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.show()
         self.raise_()

@@ -147,16 +147,17 @@ class TimeDisplay(QWidget):
         if rel_x is not None and rel_y is not None:
             sg = screen.geometry()
             self.move(sg.left() + int(rel_x), sg.top() + int(rel_y))
-        # Force the compositor to fully redraw the window after screen reconnect.
-        # Without this, stale pixels from before the KVM switch linger visually
-        # even though the window is at the correct position.
-        QTimer.singleShot(300, self._reshow_window)
+        # Nudge the window size after the screen settles so the compositor
+        # discards any stale pixels left over from before the KVM switch.
+        # Using repaint() alone (or update()) is not enough; a size change
+        # marks the window as damaged and forces a full re-composite.
+        QTimer.singleShot(300, self._nudge_repaint)
 
-    def _reshow_window(self):
-        pos = self.pos()
-        self.hide()
-        self.show()
-        self.move(pos)
+    def _nudge_repaint(self):
+        s = self.size()
+        self.resize(s.width() + 1, s.height())
+        self.resize(s)
+        self.repaint()
 
     # ------------------------------------------------------------------
     # Painting

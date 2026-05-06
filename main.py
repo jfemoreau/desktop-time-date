@@ -69,7 +69,7 @@ def main():
     app.setStyle("Fusion")
     if _is_dark_mode(app):
         app.setPalette(_build_dark_palette())
-
+    
     display = TimeDisplay()
     display.show()
 

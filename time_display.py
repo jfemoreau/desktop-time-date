@@ -99,7 +99,7 @@ class TimeDisplay(QWidget):
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowDoesNotAcceptFocus
         if self.always_on_top:
             flags |= Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
-        self.setWindowFlags(flags)
+        self.setWindowFlags(flags | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_X11DoNotAcceptFocus,   True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)

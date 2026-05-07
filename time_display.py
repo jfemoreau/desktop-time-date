@@ -142,22 +142,28 @@ class TimeDisplay(QWidget):
         screen_name = self.settings.value("screen_name", "")
         if not screen_name or screen.name() != screen_name:
             return
+        # Delay so screen geometry is fully settled before we restore.
+        QTimer.singleShot(300, self._kvm_restore)
+
+    def _kvm_restore(self):
+        screen_name = self.settings.value("screen_name", "")
         rel_x = self.settings.value("rel_x", None)
         rel_y = self.settings.value("rel_y", None)
-        if rel_x is not None and rel_y is not None:
-            sg = screen.geometry()
-            self.move(sg.left() + int(rel_x), sg.top() + int(rel_y))
-        # Nudge the window size after the screen settles so the compositor
-        # discards any stale pixels left over from before the KVM switch.
-        # Using repaint() alone (or update()) is not enough; a size change
-        # marks the window as damaged and forces a full re-composite.
-        QTimer.singleShot(300, self._nudge_repaint)
-
-    def _nudge_repaint(self):
-        s = self.size()
-        self.resize(s.width() + 1, s.height())
-        self.resize(s)
-        self.repaint()
+        w = int(self.settings.value("width",  self.width()))
+        h = int(self.settings.value("height", self.height()))
+        if not screen_name or rel_x is None or rel_y is None:
+            return
+        for s in QApplication.screens():
+            if s.name() == screen_name:
+                sg = s.geometry()
+                x  = sg.left() + int(rel_x)
+                y  = sg.top()  + int(rel_y)
+                # Use setGeometry for both the nudge and the restore so the WM
+                # cannot recenter the window in response to a bare resize() call.
+                self.setGeometry(x, y, w + 1, h)
+                self.setGeometry(x, y, w, h)
+                self.repaint()
+                return
 
     # ------------------------------------------------------------------
     # Painting
@@ -503,4 +509,6 @@ class TimeDisplay(QWidget):
             return
         from settings_dialog import SettingsDialog
         self._settings_dialog = SettingsDialog(self)
+        self._settings_dialog.finished.connect(self.update)
         self._settings_dialog.apply_stay_on_top(self.always_on_top)
+        self.update()

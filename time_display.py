@@ -99,6 +99,8 @@ class TimeDisplay(QWidget):
         flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowDoesNotAcceptFocus
         if self.always_on_top:
             flags |= Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint
+        else:
+            flags |= Qt.WindowType.WindowStaysOnBottomHint
         self.setWindowFlags(flags | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_X11DoNotAcceptFocus,   True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -495,13 +497,11 @@ class TimeDisplay(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if not getattr(self, '_initial_geo_applied', False):
-            self._initial_geo_applied = True
-            x = int(self.settings.value("x",      100))
-            y = int(self.settings.value("y",      100))
-            w = int(self.settings.value("width",   400))
-            h = int(self.settings.value("height",  220))
-            QTimer.singleShot(300, lambda: self._restore_position(x, y, w, h))
+        x = int(self.settings.value("x",      100))
+        y = int(self.settings.value("y",      100))
+        w = int(self.settings.value("width",   400))
+        h = int(self.settings.value("height",  220))
+        QTimer.singleShot(300, lambda: self._restore_position(x, y, w, h))
 
     def resizeEvent(self, event):
         self.update()
